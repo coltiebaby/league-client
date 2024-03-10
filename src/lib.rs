@@ -2,6 +2,8 @@ pub mod client;
 pub mod core;
 pub mod connector;
 
+pub use client::Client;
+
 pub type LCResult<T> = Result<T, Error>;
 
 #[derive(Debug, thiserror::Error)]

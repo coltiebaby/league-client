@@ -1,4 +1,4 @@
-use tokio::time::{sleep, Duration};
+use tokio::time::{interval, Duration};
 use league_client::client;
 
 #[tokio::main]
@@ -14,7 +14,7 @@ async fn main() {
     let msg = serde_json::to_string(&msg).unwrap();
 
     speaker.send(msg).await.expect("should have sent a message");
-    let mut ticker = tokio::time::interval(Duration::from_secs(60));
+    let mut ticker = interval(Duration::from_secs(60));
 
     loop {
         tokio::select!{

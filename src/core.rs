@@ -40,6 +40,8 @@ mod test {
             }]"#;
 
         let data: Incoming = serde_json::from_str(&raw).expect("should have a new message");
-        let msg = data.2.clone();
+        let msg = data.into_message();
+        assert_eq!(msg.event_type, EventType::Update);
+        assert_eq!(msg.uri, "/lol-champ-select/v1/skin-selector-info".to_string());
     }
 }

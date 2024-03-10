@@ -1,3 +1,14 @@
+//! Client creates a http_client and a socket connection to the LCU server.
+//!
+//! ```rust
+//! use league_client;
+//!
+//! async fn create_connection() -> Result<league_client::Client, league_client::Error> {
+//!     let client = league_client::Client::builder()?.insecure(true).build()?;
+//!     Ok(client)
+//! }
+//! ```
+
 use std::process;
 
 use base64::prelude::*;
@@ -13,6 +24,13 @@ pub struct ClientBuilder {
 }
 
 impl ClientBuilder {
+    /// Attempts to look for the LeagueClientUx process.
+    ///
+    /// - Uses ps and grep if you're in the linux family.
+    /// - Uses wmic if on the windows family.
+    ///
+    /// If it finds it, it will grab the token and port from the args.
+    /// Set insecure to true to avoid having to pass in the riot key.
     pub fn from_process() -> Result<Self> {
         let processes = from_process("LeagueClientUx").ok_or(Error::AppNotRunning)?;
         let process = processes.get(0).ok_or(Error::AppNotRunning)?;
@@ -25,11 +43,13 @@ impl ClientBuilder {
         })
     }
 
+    /// Skip cert check.
     pub fn insecure(mut self, value: bool) -> Self {
         self.insecure = value;
         self
     }
 
+    /// Consumes the builder and returns a [Client]
     pub fn build(self) -> Result<Client> {
         let basic = self.auth();
         let http_client = self.reqwest_client()?;
@@ -74,9 +94,9 @@ impl ClientBuilder {
 pub struct Client {
     basic: String,
     connector: crate::connector::Connector,
+    http: reqwest::Client,
 
     pub addr: String,
-    pub http: reqwest::Client,
 }
 
 impl Client {
@@ -84,6 +104,8 @@ impl Client {
         ClientBuilder::from_process()
     }
 
+    /// Connect to the LCU client. Returns a socket connection aliased as [Connected][c].
+    /// [c]: crate::connector::Connected
     pub async fn connect_to_socket(&self) -> Result<crate::connector::Connected> {
         let mut req = format!("wss://{}", &self.addr)
             .into_client_request().map_err(|e| Error::WebsocketCreation(e.to_string()))?;
@@ -100,11 +122,14 @@ impl Client {
         Ok(connected)
     }
 
+    /// Gives back a copy of the reqwest client. [Read more][rm]
+    /// [rm]: https://docs.rs/reqwest/latest/reqwest/
     pub fn http_client(&self) -> reqwest::Client {
         self.http.clone()
     }
 }
 
+#[cfg(target_family = "unix")]
 fn from_process(process: &str) -> Option<Vec<String>> {
     let ps = process::Command::new("ps")
         .args(["x", "-A", "-o args"])
@@ -126,6 +151,24 @@ fn from_process(process: &str) -> Option<Vec<String>> {
     Some(lines)
 }
 
+#[cfg(target_family = "windows")]
+fn from_process(process: &str) -> Option<Vec<String>> {
+    let wanted = format!("name='{}.exe'", process);
+
+    let wmic = process::Command::new("wmic")
+        .args(["PROCESS", "WHERE", &wanted, "GET", "commandline"])
+        .spawn()
+        .ok()?;
+
+    let output = String::from_utf8(wmic.output().ok()?.stdout).ok()?;
+    let lines = output.lines();
+
+    let lines: Vec<String> = lines
+        .filter(|x| x.contains("--app-port") && x.contains("--remoting-auth-token"))
+        .map(String::from)
+        .collect();
+}
+
 
 fn parse_process(value: &str) -> Result<(String, String)> {
     let re = regex::Regex::new(r"--remoting-auth-token=([\w-]*) --app-port=([0-9]*)").unwrap();
@@ -145,7 +188,8 @@ mod tests {
     fn client_from_string() {
         let example = r#"/Applications/League of Legends.app/Contents/LoL/League of Legends.app/Contents/MacOS/LeagueClientUx --riotclient-auth-token=token --riotclient-app-port=12345 --no-rads --disable-self-update --region=NA --locale=en_US --client-config-url=https://clientconfig.rpg.riotgames.com --riotgamesapi-standalone --riotgamesapi-settings=token --rga-lite --remoting-auth-token=token --app-port=12345 --install-directory=/Applications/League of Legends.app/Contents/LoL --app-name=LeagueClient --ux-name=LeagueClientUx --ux-helper-name=LeagueClientUxHelper --log-dir=LeagueClient Logs --crash-reporting=crashpad --crash-environment=NA1 --app-log-file-path=/Applications/League of Legends.app/Contents/LoL/Logs/LeagueClient Logs/2024-03-09T14-52-20_5736_LeagueClient.log --app-pid=5736 --output-base-dir=/Applications/League of Legends.app/Contents/LoL --no-proxy-server --ignore-certificate-errors"#;
 
-        let client = Client::from_str(example).expect("usable client");
-        assert_eq!(client.port, "12345".to_string())
+        let (token, port) = parse_process(example).expect("usable client");
+        assert_eq!(port, "12345".to_string());
+        assert_eq!(token, "token".to_string())
     }
 }
