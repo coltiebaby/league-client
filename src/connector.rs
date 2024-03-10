@@ -5,7 +5,7 @@ use tokio_native_tls::TlsStream;
 use tokio::net::TcpStream;
 use tungstenite::Message;
 
-use crate::core;
+use crate::{LCResult as Result, Error, core};
 
 pub type Connected = WebSocketStream<TlsStream<TcpStream>>;
 
@@ -14,16 +14,16 @@ pub struct Speaker {
 
     pub reader: flume::Receiver<core::Incoming>,
     writer: flume::Sender<String>,
-    handles: Vec<tokio::task::JoinHandle<()>>,
+    _handles: Vec<tokio::task::JoinHandle<()>>,
 }
 
 impl Speaker {
-    pub async fn send(&self, msg: String) {
-        self.writer.send_async(msg).await;
+    pub async fn send(&self, msg: String) -> Result<()> {
+        self.writer.send_async(msg).await.map_err(|_| Error::SendErr)
     }
 
-    fn try_send(&self, msg: String){
-        self.writer.try_send(msg);
+    fn try_send(&self, msg: String) -> Result<()> {
+        self.writer.try_send(msg).map_err(|_| Error::SendErr)
     }
 }
 
@@ -31,10 +31,14 @@ impl Drop for Speaker {
     fn drop(&mut self) {
         let msg = (6, "OnJsonApiEvent");
         if let Ok(msg) = serde_json::to_string(&msg) {
-            self.try_send(msg)
+            if let Err(e) = self.try_send(msg) {
+                println!("error dropping: {e}");
+            }
         };
 
-        self.finish.send(true);
+        if let Err(e) = self.finish.send(true) {
+            println!("failed to yell: {e}");
+        };
     }
 }
 
@@ -54,7 +58,7 @@ pub async fn subscribe(socket: Connected) -> Speaker {
         finish: cleanup_tx,
         reader: reader_rx,
         writer: writer_tx,
-        handles: vec![read_handle, write_handle],
+        _handles: vec![read_handle, write_handle],
     }
 }
 
@@ -67,8 +71,8 @@ async fn read_from(mut end: tokio::sync::broadcast::Receiver<bool>, tx: flume::S
                     continue;
                 }
 
-                let incoming: core::Incoming = serde_json::from_str(&msg).unwrap();
-                tx.send_async(incoming).await;
+                let incoming: core::Incoming = serde_json::from_str(&msg).expect("failed to convert to incoming");
+                tx.send_async(incoming).await.expect("could not send message");
             },
             _ = end.recv() => { break },
         };
@@ -79,7 +83,7 @@ async fn write_to(mut end: tokio::sync::broadcast::Receiver<bool>, mut tx: Split
     loop {
         tokio::select! {
             Ok(msg) = read.recv_async() => {
-                tx.send(Message::Text(msg)).await;
+                tx.send(Message::Text(msg)).await.expect("should have send a message to socket");
             },
             _ = end.recv() => { break },
         };
@@ -141,6 +145,6 @@ impl ConnectorBuilder {
         let connector = connector.build().unwrap();
         let tls = tokio_native_tls::TlsConnector::from(connector);
 
-        Connector { tls }
+        Connector::new(tls)
     }
 }
