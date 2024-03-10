@@ -180,7 +180,7 @@ impl ConnectorBuilder {
         }
     }
 
-    pub fn build(self) -> Connector {
+    pub fn build(self) -> Result<Connector> {
         let mut connector = native_tls::TlsConnector::builder();
 
         if self.insecure {
@@ -190,9 +190,9 @@ impl ConnectorBuilder {
             unimplemented!();
         }
 
-        let connector = connector.build().unwrap();
+        let connector = connector.build().map_err(|e| Error::Websocket(e.to_string()))?;
         let tls = tokio_native_tls::TlsConnector::from(connector);
 
-        Connector::new(tls)
+        Ok(Connector::new(tls))
     }
 }
