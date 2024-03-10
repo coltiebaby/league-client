@@ -104,8 +104,7 @@ impl Client {
         ClientBuilder::from_process()
     }
 
-    /// Connect to the LCU client. Returns a socket connection aliased as [Connected][c].
-    /// [c]: crate::connector::Connected
+    /// Connect to the LCU client. Returns a socket connection aliased as [Connected](`crate::connector::Connected`).
     pub async fn connect_to_socket(&self) -> Result<crate::connector::Connected> {
         let mut req = format!("wss://{}", &self.addr)
             .into_client_request().map_err(|e| Error::WebsocketRequest(e.to_string()))?;
@@ -121,8 +120,7 @@ impl Client {
         self.connector.connect(req).await
     }
 
-    /// Gives back a copy of the reqwest client. [Read more][rm]
-    /// [rm]: https://docs.rs/reqwest/latest/reqwest/
+    /// Gives back a copy of the reqwest client. [Read More](https://docs.rs/reqwest/latest/reqwest/)
     pub fn http_client(&self) -> reqwest::Client {
         self.http.clone()
     }
