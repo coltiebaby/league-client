@@ -16,7 +16,7 @@ For now you can just use `[serde_json::from_value](https://docs.rs/serde_json/la
 This will allow to make only the ones you need going forward.
 
 ```rust
-let speaker = lcu::connector::subscribe(connected).await;
+let speaker = league_client::subscribe(connected).await;
 while let Ok(msg) = speaker.reader.recv_async().await {
     println!("{msg:?}");
 }
