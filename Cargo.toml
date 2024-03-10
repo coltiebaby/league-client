@@ -6,7 +6,6 @@ authors = ["Colt Robertson <colt.robertson86@gmail.com>"]
 description = "Connect too your league of legends client"
 repository = "https://github.com/coltiebaby/league-client"
 license = "MIT"
-license-file = "LICENSE"
 readme = "README.md"
 
 [dependencies]
