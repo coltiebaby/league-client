@@ -16,15 +16,20 @@ async fn main() {
     speaker.send(msg).await.expect("should have sent a message");
     let mut ticker = interval(Duration::from_secs(60));
 
+    let mut counter = 0;
     loop {
         tokio::select!{
             Ok(msg) = speaker.reader.recv_async() => {
                 println!("{msg:?}");
             }
             _ = ticker.tick() => {
-                break;
+                counter += 1;
             }
         };
+
+        if counter == 2 {
+            break;
+        }
     }
 
     println!("finished");

@@ -95,7 +95,9 @@ async fn read_from(mut end: tokio::sync::broadcast::Receiver<bool>, tx: flume::S
                     },
                 };
 
-                if let Err(_) = tx.send_async(incoming).await {
+                let resp = tx.send_async(incoming).await;
+
+                if resp.is_err() {
                     tracing::warn!("channel disconnect");
                     break;
                 }
@@ -117,7 +119,10 @@ async fn write_to(mut end: tokio::sync::broadcast::Receiver<bool>, mut tx: Split
                     }
                 };
 
-                if let Err(_) = tx.send(Message::Text(msg)).await {
+
+                let resp = tx.send(Message::Text(msg)).await;
+
+                if resp.is_err() {
                     tracing::warn!("channel disconnect");
                     break;
                 }
@@ -172,11 +177,10 @@ impl ConnectorBuilder {
     pub fn insecure(self, value: bool) -> Self {
         Self {
             insecure: value,
-            ..self
         }
     }
 
-    pub fn build(self) -> Connector {
+    pub fn build(self) -> Result<Connector> {
         let mut connector = native_tls::TlsConnector::builder();
 
         if self.insecure {
@@ -186,9 +190,9 @@ impl ConnectorBuilder {
             unimplemented!();
         }
 
-        let connector = connector.build().unwrap();
+        let connector = connector.build().map_err(|e| Error::Websocket(e.to_string()))?;
         let tls = tokio_native_tls::TlsConnector::from(connector);
 
-        Connector::new(tls)
+        Ok(Connector::new(tls))
     }
 }

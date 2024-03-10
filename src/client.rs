@@ -53,7 +53,7 @@ impl ClientBuilder {
     pub fn build(self) -> Result<Client> {
         let basic = self.auth();
         let http_client = self.reqwest_client()?;
-        let connector = crate::connector::Connector::builder().insecure(self.insecure).build();
+        let connector = crate::connector::Connector::builder().insecure(self.insecure).build()?;
         let addr = format!("127.0.0.1:{}", self.port);
 
         Ok(Client {
@@ -168,9 +168,9 @@ fn from_process(process: &str) -> Option<Vec<String>> {
 
 
 fn parse_process(value: &str) -> Result<(String, String)> {
-    let re = regex::Regex::new(r"--remoting-auth-token=([\w-]*) --app-port=([0-9]*)").unwrap();
+    let re = regex::Regex::new(r"--remoting-auth-token=([\w-]*) --app-port=([0-9]*)").or(Err(Error::AppNotRunning))?;
     let caps = re.captures(value);
-    let caps = caps.unwrap();
+    let caps = caps.ok_or(Error::AppNotRunning)?;
     let token: String = caps.get(1).ok_or(Error::AppNotRunning)?.as_str().to_string();
     let port: String = caps.get(2).ok_or(Error::AppNotRunning)?.as_str().to_string();
 
