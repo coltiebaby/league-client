@@ -2,6 +2,9 @@
 name = "league-client"
 version = "0.1.0"
 edition = "2021"
+authors = ["Colt Robertson <colt.robertson86@gmail.com>"]
+description = "Connect too your league of legends client"
+repository = "https://github.com/coltiebaby/league-client"
 
 [dependencies]
 base64 = "0.22.0"
