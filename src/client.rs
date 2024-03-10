@@ -47,7 +47,7 @@ impl ClientBuilder {
 
     fn auth(&self) -> String {
         let auth = format!("riot:{}", self.token);
-        format!("basic {}", BASE64_STANDARD.encode(auth))
+        format!("Basic {}", BASE64_STANDARD.encode(auth))
     }
 
     fn reqwest_client(&self) -> Result<reqwest::Client> {
@@ -56,7 +56,7 @@ impl ClientBuilder {
             .map_err(|e| Error::HttpClientCreation(e.to_string()))?;
         auth.set_sensitive(true);
 
-        headers.insert("authorization", auth);
+        headers.insert(reqwest::header::AUTHORIZATION, auth);
 
         let mut client_builder = reqwest::Client::builder().default_headers(headers);
 

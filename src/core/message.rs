@@ -1,7 +1,14 @@
 use serde::{Serialize, Deserialize};
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Incoming(usize, String, Message);
+pub struct Incoming(pub usize, pub String, pub Message);
+
+impl Incoming {
+    pub fn into_message(self) -> Message {
+        self.2
+    }
+}
+
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum EventType {
@@ -15,9 +22,9 @@ pub enum EventType {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Message {
-    data: serde_json::Value,
-    event_type: EventType,
-    uri: String,
+    pub data: serde_json::Value,
+    pub event_type: EventType,
+    pub uri: String,
 }
 
 #[cfg(test)]
