@@ -8,7 +8,7 @@ async fn main() {
 
     let connected = lc.connect_to_socket().await.unwrap();
 
-    let speaker = league_client::connector::subscribe(connected).await;
+    let speaker = league_client::subscribe(connected).await;
 
     let msg = (5, "OnJsonApiEvent");
     let msg = serde_json::to_string(&msg).unwrap();

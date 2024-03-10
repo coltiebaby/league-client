@@ -3,6 +3,7 @@ pub mod core;
 pub mod connector;
 
 pub use client::Client;
+pub use connector::subscribe;
 
 pub type LCResult<T> = Result<T, Error>;
 
@@ -15,7 +16,15 @@ pub enum Error {
     #[error("failed to create the client: {0}")]
     HttpClientCreation(String),
     #[error("failed to create the client: {0}")]
-    WebsocketCreation(String),
+    Websocket(String),
+    #[error("failed to make a request: {0}")]
+    WebsocketRequest(String),
+    #[error("failed to connect to stream: {0}")]
+    Stream(#[from] std::io::Error),
+    #[error("tls stream failure: {0}")]
+    Tls(#[from] native_tls::Error),
     #[error("failed to send message")]
     SendErr,
+    #[error("websocket connection error: {0}")]
+    Tungstenite(#[from] tungstenite::error::Error)
 }

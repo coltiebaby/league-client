@@ -108,18 +108,17 @@ impl Client {
     /// [c]: crate::connector::Connected
     pub async fn connect_to_socket(&self) -> Result<crate::connector::Connected> {
         let mut req = format!("wss://{}", &self.addr)
-            .into_client_request().map_err(|e| Error::WebsocketCreation(e.to_string()))?;
+            .into_client_request().map_err(|e| Error::WebsocketRequest(e.to_string()))?;
 
         let auth = self.basic.clone();
         let headers = req.headers_mut();
 
         headers.insert(
             "authorization",
-            auth.parse().map_err(|_| Error::WebsocketCreation("Could not parse auth".into()))?
+            auth.parse().map_err(|_| Error::WebsocketRequest("failed to createa an auth header".into()))?
         );
 
-        let connected = self.connector.connect(req).await;
-        Ok(connected)
+        self.connector.connect(req).await
     }
 
     /// Gives back a copy of the reqwest client. [Read more][rm]

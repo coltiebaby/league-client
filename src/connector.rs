@@ -9,21 +9,25 @@ use crate::{LCResult as Result, Error, core};
 
 pub type Connected = WebSocketStream<TlsStream<TcpStream>>;
 
+/// Stores information of the subscription.
+///
+/// Once speaker is dropped, it will unsubscribe from the events and broadcast
+/// that it is finished to the read/write tasks.
 pub struct Speaker {
     finish: tokio::sync::broadcast::Sender<bool>,
-
-    pub reader: flume::Receiver<core::Incoming>,
     writer: flume::Sender<String>,
     _handles: Vec<tokio::task::JoinHandle<()>>,
+
+    pub reader: flume::Receiver<core::Incoming>,
 }
 
 impl Speaker {
     pub async fn send(&self, msg: String) -> Result<()> {
-        self.writer.send_async(msg).await.map_err(|_| Error::SendErr)
+        self.writer.send_async(msg).await.or(Err(Error::SendErr))
     }
 
     fn try_send(&self, msg: String) -> Result<()> {
-        self.writer.try_send(msg).map_err(|_| Error::SendErr)
+        self.writer.try_send(msg).or(Err(Error::SendErr))
     }
 }
 
@@ -32,16 +36,19 @@ impl Drop for Speaker {
         let msg = (6, "OnJsonApiEvent");
         if let Ok(msg) = serde_json::to_string(&msg) {
             if let Err(e) = self.try_send(msg) {
-                println!("error dropping: {e}");
+                tracing::error!("failed to unsubscribe: {e}");
             }
         };
 
         if let Err(e) = self.finish.send(true) {
-            println!("failed to yell: {e}");
+            tracing::error!("failed to send broadcast: {e}");
         };
     }
 }
 
+/// Start a subscription to the socket.
+///
+/// Use the speaker to communicate with the socket.
 pub async fn subscribe(socket: Connected) -> Speaker {
     let (cleanup_tx, cleanup_rx1) = tokio::sync::broadcast::channel(1);
     let cleanup_rx2 = cleanup_tx.subscribe();
@@ -65,14 +72,33 @@ pub async fn subscribe(socket: Connected) -> Speaker {
 async fn read_from(mut end: tokio::sync::broadcast::Receiver<bool>, tx: flume::Sender<core::Incoming>, mut read: SplitStream<Connected>) {
     loop {
         tokio::select! {
-            Some(Ok(msg)) = read.next() => {
+            Some(msg) = read.next() => {
+                let msg = match msg {
+                    Ok(msg) => msg,
+                    Err(_) => {
+                        tracing::warn!("channel disconnect");
+                        break;
+                    }
+                };
+
                 let msg = msg.to_string();
                 if msg.is_empty() {
                     continue;
                 }
 
-                let incoming: core::Incoming = serde_json::from_str(&msg).expect("failed to convert to incoming");
-                tx.send_async(incoming).await.expect("could not send message");
+                let incoming = serde_json::from_str::<core::Incoming>(&msg);
+                let incoming = match incoming {
+                    Ok(incoming) => incoming,
+                    Err(_) => {
+                        tracing::warn!("failed to parse msg into incoming: {msg}");
+                        continue;
+                    },
+                };
+
+                if let Err(_) = tx.send_async(incoming).await {
+                    tracing::warn!("channel disconnect");
+                    break;
+                }
             },
             _ = end.recv() => { break },
         };
@@ -82,14 +108,27 @@ async fn read_from(mut end: tokio::sync::broadcast::Receiver<bool>, tx: flume::S
 async fn write_to(mut end: tokio::sync::broadcast::Receiver<bool>, mut tx: SplitSink<Connected, Message>, read: flume::Receiver<String>) {
     loop {
         tokio::select! {
-            Ok(msg) = read.recv_async() => {
-                tx.send(Message::Text(msg)).await.expect("should have send a message to socket");
+            msg = read.recv_async() => {
+                let msg = match msg {
+                    Ok(msg) => msg,
+                    Err(_) => {
+                        tracing::warn!("channel disconnect");
+                        break;
+                    }
+                };
+
+                if let Err(_) = tx.send(Message::Text(msg)).await {
+                    tracing::warn!("channel disconnect");
+                    break;
+                }
             },
             _ = end.recv() => { break },
         };
     }
 }
 
+/// Creates a connection to the wanted websocket. Use this if you want to set up
+/// the connection yourself.
 pub struct Connector {
     tls: tokio_native_tls::TlsConnector,
 }
@@ -99,23 +138,28 @@ impl Connector {
         Self { tls }
     }
 
+    /// create a builder to set up the tls connection.
     pub fn builder() -> ConnectorBuilder {
         ConnectorBuilder::default()
     }
 
-    pub async fn connect(&self, req: tungstenite::http::Request<()>) -> Connected {
+    /// creates a stream and wraps it with tls settings. It will then
+    /// create asocket from the said stream.
+    ///
+    /// the request must have a basic auth included or it will not complete.
+    pub async fn connect(&self, req: tungstenite::http::Request<()>) -> Result<Connected> {
         let uri = req.uri();
 
-        let host = uri.host().unwrap();
-        let port = uri.port().unwrap();
+        let host = uri.host().ok_or(Error::Websocket("host is missing".into()))?;
+        let port = uri.port().ok_or(Error::Websocket("port is missing".into()))?;
         let combo = format!("{host}:{port}");
 
-        let stream = tokio::net::TcpStream::connect(&combo).await.unwrap();
-        let stream = self.tls.connect(&combo, stream).await.unwrap();
+        let stream = tokio::net::TcpStream::connect(&combo).await.map_err(Error::Stream)?;
+        let stream = self.tls.connect(&combo, stream).await.map_err(Error::Tls)?;
 
-        let (socket, _) = tokio_tungstenite::client_async(req, stream).await.expect("Failed to connect");
+        let (socket, _) = tokio_tungstenite::client_async(req, stream).await.map_err(Error::Tungstenite)?;
 
-        socket
+        Ok(socket)
     }
 }
 
