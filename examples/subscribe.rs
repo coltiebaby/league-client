@@ -1,28 +1,27 @@
 use tokio::time::{sleep, Duration};
+use league_client::client;
 
 #[tokio::main]
 async fn main() {
-    let lc = league_client::client::Client::new().unwrap();
-    let req = lc.wss().unwrap();
+    let builder = client::Client::builder().unwrap();
+    let lc = builder.insecure(true).build().unwrap();
 
-    let builder = league_client::connector::Connector::builder();
-    let c = builder.insecure(true).build();
-
-    let connected = c.connect(req).await;
+    let connected = lc.connect_to_socket().await.unwrap();
 
     let speaker = league_client::connector::subscribe(connected).await;
 
     let msg = (5, "OnJsonApiEvent");
     let msg = serde_json::to_string(&msg).unwrap();
 
-    speaker.send(msg).await;
+    speaker.send(msg).await.expect("should have sent a message");
+    let mut ticker = tokio::time::interval(Duration::from_secs(60));
 
     loop {
         tokio::select!{
             Ok(msg) = speaker.reader.recv_async() => {
                 println!("{msg:?}");
             }
-            _ = sleep(Duration::from_secs(60)) => {
+            _ = ticker.tick() => {
                 break;
             }
         };

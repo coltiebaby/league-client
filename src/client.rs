@@ -1,77 +1,107 @@
 use std::process;
 
 use base64::prelude::*;
-use tungstenite::http;
 use tungstenite::client::IntoClientRequest;
 
-use super::{LCUResult, Error};
+use super::{LCResult as Result, Error};
 
-#[derive(Debug)]
-pub struct Client {
-    pub token: String,
-    pub port: String,
+#[derive(Default, Debug)]
+pub struct ClientBuilder {
+    token: String,
+    port: String,
+    insecure: bool,
 }
 
-impl Client {
-    pub fn new() -> LCUResult<Self> {
-        let processes = from_process("LeagueClientUx").ok_or(super::Error::AppNotRunning)?;
-        let process = processes.get(0).ok_or(super::Error::AppNotRunning)?;
+impl ClientBuilder {
+    pub fn from_process() -> Result<Self> {
+        let processes = from_process("LeagueClientUx").ok_or(Error::AppNotRunning)?;
+        let process = processes.get(0).ok_or(Error::AppNotRunning)?;
+        let (token, port) = parse_process(process)?;
 
-        Self::from_str(process)
+        Ok(Self {
+            token,
+            port,
+            ..Default::default()
+        })
     }
 
-    fn from_str(value: &str) -> super::LCUResult<Client> {
-        let re = regex::Regex::new(r"--remoting-auth-token=([\w-]*) --app-port=([0-9]*)").unwrap();
-        let caps = re.captures(value);
-        let caps = caps.unwrap();
-        let token: String = caps.get(1).unwrap().as_str().to_string();
-        let port: String = caps.get(2).unwrap().as_str().to_string();
-
-        Ok(Client { token, port })
+    pub fn insecure(mut self, value: bool) -> Self {
+        self.insecure = value;
+        self
     }
 
-    fn reqwest_client(&self) -> LCUResult<reqwest::Client> {
-        let mut headers = reqwest::header::HeaderMap::new();
-        let mut auth = reqwest::header::HeaderValue::from_str(&self.auth()).map_err(|_| Error::Unknown)?;
-        auth.set_sensitive(true);
+    pub fn build(self) -> Result<Client> {
+        let basic = self.auth();
+        let http_client = self.reqwest_client()?;
+        let connector = crate::connector::Connector::builder().insecure(self.insecure).build();
+        let addr = format!("127.0.0.1:{}", self.port);
 
-        headers.insert("authorization", auth);
-
-        reqwest::Client::builder()
-            .default_headers(headers)
-            .danger_accept_invalid_certs(true)
-            .build()
-            .map_err(|_| Error::Unknown)
+        Ok(Client {
+            basic,
+            connector,
+            addr,
+            http: http_client,
+        })
     }
+
 
     fn auth(&self) -> String {
         let auth = format!("riot:{}", self.token);
         format!("basic {}", BASE64_STANDARD.encode(auth))
     }
 
-    pub fn uri(&self) -> String {
-        format!("127.0.0.1:{}", self.port)
+    fn reqwest_client(&self) -> Result<reqwest::Client> {
+        let mut headers = reqwest::header::HeaderMap::new();
+        let mut auth = reqwest::header::HeaderValue::from_str(&self.auth())
+            .map_err(|e| Error::HttpClientCreation(e.to_string()))?;
+        auth.set_sensitive(true);
+
+        headers.insert("authorization", auth);
+
+        let mut client_builder = reqwest::Client::builder().default_headers(headers);
+
+        if self.insecure {
+            client_builder = client_builder.danger_accept_invalid_certs(true);
+        }
+
+        client_builder
+            .build()
+            .map_err(|e| Error::HttpClientCreation(e.to_string()))
     }
 
-    pub async fn patch(&self, path: &str, data: String) -> LCUResult<reqwest::Response> {
-        let u = format!("https://{}/{}", self.uri(), path);
+}
 
-        let client = self.reqwest_client()?;
-        client.patch(u)
-            .body(data)
-            .send()
-            .await
-            .map_err(|_| Error::Unknown)
+pub struct Client {
+    basic: String,
+    connector: crate::connector::Connector,
+
+    pub addr: String,
+    pub http: reqwest::Client,
+}
+
+impl Client {
+    pub fn builder() -> Result<ClientBuilder> {
+        ClientBuilder::from_process()
     }
 
-    pub fn wss(&self) -> LCUResult<http::Request<()>> {
-        let auth = self.auth();
-        let mut req = format!("wss://127.0.0.1:{}", self.port)
-            .into_client_request().map_err(|_| Error::Unknown)?;
+    pub async fn connect_to_socket(&self) -> Result<crate::connector::Connected> {
+        let mut req = format!("wss://{}", &self.addr)
+            .into_client_request().map_err(|e| Error::WebsocketCreation(e.to_string()))?;
 
-        req.headers_mut().insert("authorization", auth.parse().map_err(|_| Error::Unknown)?);
+        let auth = self.basic.clone();
+        let headers = req.headers_mut();
 
-        Ok(req)
+        headers.insert(
+            "authorization",
+            auth.parse().map_err(|_| Error::WebsocketCreation("Could not parse auth".into()))?
+        );
+
+        let connected = self.connector.connect(req).await;
+        Ok(connected)
+    }
+
+    pub fn http_client(&self) -> reqwest::Client {
+        self.http.clone()
     }
 }
 
@@ -94,6 +124,17 @@ fn from_process(process: &str) -> Option<Vec<String>> {
         .collect();
 
     Some(lines)
+}
+
+
+fn parse_process(value: &str) -> Result<(String, String)> {
+    let re = regex::Regex::new(r"--remoting-auth-token=([\w-]*) --app-port=([0-9]*)").unwrap();
+    let caps = re.captures(value);
+    let caps = caps.unwrap();
+    let token: String = caps.get(1).ok_or(Error::AppNotRunning)?.as_str().to_string();
+    let port: String = caps.get(2).ok_or(Error::AppNotRunning)?.as_str().to_string();
+
+    Ok((token, port))
 }
 
 #[cfg(test)]

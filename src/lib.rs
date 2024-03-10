@@ -2,9 +2,7 @@ pub mod client;
 pub mod core;
 pub mod connector;
 
-use tungstenite::http;
-
-pub type LCUResult<T> = Result<T, Error>;
+pub type LCResult<T> = Result<T, Error>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -12,12 +10,10 @@ pub enum Error {
     Unknown,
     #[error("league of legends is not running")]
     AppNotRunning,
-    #[error("failed to make client: {0}")]
-    HttpClientError(String),
-    #[error("request error: {0}")]
-    Request(#[from] http::Error),
-    #[error("websocket: {0}")]
-    Websocket(String),
-    #[error("request is missing host or port")]
-    Uri,
+    #[error("failed to create the client: {0}")]
+    HttpClientCreation(String),
+    #[error("failed to create the client: {0}")]
+    WebsocketCreation(String),
+    #[error("failed to send message")]
+    SendErr,
 }
