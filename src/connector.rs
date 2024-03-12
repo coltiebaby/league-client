@@ -1,11 +1,13 @@
-use futures_util::{StreamExt, SinkExt};
+//! Establishes the connection through the websocket
+
 use futures_util::stream::{SplitSink, SplitStream};
-use tokio_tungstenite::WebSocketStream;
-use tokio_native_tls::TlsStream;
+use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
+use tokio_native_tls::TlsStream;
+use tokio_tungstenite::WebSocketStream;
 use tungstenite::Message;
 
-use crate::{LCResult as Result, Error, core};
+use crate::{core, Error, LCResult as Result};
 
 pub type Connected = WebSocketStream<TlsStream<TcpStream>>;
 
@@ -69,7 +71,11 @@ pub async fn subscribe(socket: Connected) -> Speaker {
     }
 }
 
-async fn read_from(mut end: tokio::sync::broadcast::Receiver<bool>, tx: flume::Sender<core::Incoming>, mut read: SplitStream<Connected>) {
+async fn read_from(
+    mut end: tokio::sync::broadcast::Receiver<bool>,
+    tx: flume::Sender<core::Incoming>,
+    mut read: SplitStream<Connected>,
+) {
     loop {
         tokio::select! {
             Some(msg) = read.next() => {
@@ -96,7 +102,6 @@ async fn read_from(mut end: tokio::sync::broadcast::Receiver<bool>, tx: flume::S
                 };
 
                 let resp = tx.send_async(incoming).await;
-
                 if resp.is_err() {
                     tracing::warn!("channel disconnect");
                     break;
@@ -107,7 +112,11 @@ async fn read_from(mut end: tokio::sync::broadcast::Receiver<bool>, tx: flume::S
     }
 }
 
-async fn write_to(mut end: tokio::sync::broadcast::Receiver<bool>, mut tx: SplitSink<Connected, Message>, read: flume::Receiver<String>) {
+async fn write_to(
+    mut end: tokio::sync::broadcast::Receiver<bool>,
+    mut tx: SplitSink<Connected, Message>,
+    read: flume::Receiver<String>,
+) {
     loop {
         tokio::select! {
             msg = read.recv_async() => {
@@ -119,10 +128,8 @@ async fn write_to(mut end: tokio::sync::broadcast::Receiver<bool>, mut tx: Split
                     }
                 };
 
-
-                let resp = tx.send(Message::Text(msg)).await;
-
-                if resp.is_err() {
+                let res = tx.send(Message::Text(msg)).await;
+                if res.is_err() {
                     tracing::warn!("channel disconnect");
                     break;
                 }
@@ -155,14 +162,22 @@ impl Connector {
     pub async fn connect(&self, req: tungstenite::http::Request<()>) -> Result<Connected> {
         let uri = req.uri();
 
-        let host = uri.host().ok_or(Error::Websocket("host is missing".into()))?;
-        let port = uri.port().ok_or(Error::Websocket("port is missing".into()))?;
+        let host = uri
+            .host()
+            .ok_or(Error::Websocket("host is missing".into()))?;
+        let port = uri
+            .port()
+            .ok_or(Error::Websocket("port is missing".into()))?;
         let combo = format!("{host}:{port}");
 
-        let stream = tokio::net::TcpStream::connect(&combo).await.map_err(Error::Stream)?;
+        let stream = tokio::net::TcpStream::connect(&combo)
+            .await
+            .map_err(Error::Stream)?;
         let stream = self.tls.connect(&combo, stream).await.map_err(Error::Tls)?;
 
-        let (socket, _) = tokio_tungstenite::client_async(req, stream).await.map_err(Error::Tungstenite)?;
+        let (socket, _) = tokio_tungstenite::client_async(req, stream)
+            .await
+            .map_err(Error::Tungstenite)?;
 
         Ok(socket)
     }
@@ -175,9 +190,7 @@ pub struct ConnectorBuilder {
 
 impl ConnectorBuilder {
     pub fn insecure(self, value: bool) -> Self {
-        Self {
-            insecure: value,
-        }
+        Self { insecure: value }
     }
 
     pub fn build(self) -> Result<Connector> {
@@ -190,7 +203,9 @@ impl ConnectorBuilder {
             unimplemented!();
         }
 
-        let connector = connector.build().map_err(|e| Error::Websocket(e.to_string()))?;
+        let connector = connector
+            .build()
+            .map_err(|e| Error::Websocket(e.to_string()))?;
         let tls = tokio_native_tls::TlsConnector::from(connector);
 
         Ok(Connector::new(tls))

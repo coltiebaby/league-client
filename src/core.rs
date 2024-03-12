@@ -1,6 +1,10 @@
-use serde::{Serialize, Deserialize};
+//! Core values
+
+use serde::{Deserialize, Serialize};
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+
+/// The message that is sent from the client
 pub struct Incoming(pub usize, pub String, pub Message);
 
 impl Incoming {
@@ -8,7 +12,6 @@ impl Incoming {
         self.2
     }
 }
-
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum EventType {
@@ -42,6 +45,9 @@ mod test {
         let data: Incoming = serde_json::from_str(raw).expect("should have a new message");
         let msg = data.into_message();
         assert_eq!(msg.event_type, EventType::Update);
-        assert_eq!(msg.uri, "/lol-champ-select/v1/skin-selector-info".to_string());
+        assert_eq!(
+            msg.uri,
+            "/lol-champ-select/v1/skin-selector-info".to_string()
+        );
     }
 }
