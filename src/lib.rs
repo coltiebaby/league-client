@@ -1,8 +1,10 @@
 pub mod client;
-pub mod core;
 pub mod connector;
+pub mod core;
 
 pub use client::Client;
+pub use connector::Speaker;
+
 pub use connector::subscribe;
 
 pub type LCResult<T> = Result<T, Error>;
@@ -26,5 +28,5 @@ pub enum Error {
     #[error("failed to send message")]
     SendErr,
     #[error("websocket connection error: {0}")]
-    Tungstenite(#[from] tungstenite::error::Error)
+    Tungstenite(#[from] tungstenite::error::Error),
 }

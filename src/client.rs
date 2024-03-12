@@ -14,7 +14,7 @@ use std::process;
 use base64::prelude::*;
 use tungstenite::client::IntoClientRequest;
 
-use super::{LCResult as Result, Error};
+use super::{Error, LCResult as Result};
 
 #[derive(Default, Debug)]
 pub struct ClientBuilder {
@@ -53,7 +53,9 @@ impl ClientBuilder {
     pub fn build(self) -> Result<Client> {
         let basic = self.auth();
         let http_client = self.reqwest_client()?;
-        let connector = crate::connector::Connector::builder().insecure(self.insecure).build()?;
+        let connector = crate::connector::Connector::builder()
+            .insecure(self.insecure)
+            .build();
         let addr = format!("127.0.0.1:{}", self.port);
 
         Ok(Client {
@@ -63,7 +65,6 @@ impl ClientBuilder {
             http: http_client,
         })
     }
-
 
     fn auth(&self) -> String {
         let auth = format!("riot:{}", self.token);
@@ -88,7 +89,6 @@ impl ClientBuilder {
             .build()
             .map_err(|e| Error::HttpClientCreation(e.to_string()))
     }
-
 }
 
 pub struct Client {
@@ -107,14 +107,16 @@ impl Client {
     /// Connect to the LCU client. Returns a socket connection aliased as [Connected](`crate::connector::Connected`).
     pub async fn connect_to_socket(&self) -> Result<crate::connector::Connected> {
         let mut req = format!("wss://{}", &self.addr)
-            .into_client_request().map_err(|e| Error::WebsocketRequest(e.to_string()))?;
+            .into_client_request()
+            .map_err(|e| Error::WebsocketRequest(e.to_string()))?;
 
         let auth = self.basic.clone();
         let headers = req.headers_mut();
 
         headers.insert(
             "authorization",
-            auth.parse().map_err(|_| Error::WebsocketRequest("failed to createa an auth header".into()))?
+            auth.parse()
+                .map_err(|_| Error::WebsocketRequest("failed to createa an auth header".into()))?,
         );
 
         self.connector.connect(req).await
@@ -154,25 +156,36 @@ fn from_process(process: &str) -> Option<Vec<String>> {
 
     let wmic = process::Command::new("wmic")
         .args(["PROCESS", "WHERE", &wanted, "GET", "commandline"])
-        .spawn()
+        .output()
         .ok()?;
 
-    let output = String::from_utf8(wmic.output().ok()?.stdout).ok()?;
+    let output = String::from_utf8(wmic.stdout).ok()?;
     let lines = output.lines();
 
     let lines: Vec<String> = lines
         .filter(|x| x.contains("--app-port") && x.contains("--remoting-auth-token"))
         .map(String::from)
         .collect();
+
+    Some(lines)
 }
 
-
 fn parse_process(value: &str) -> Result<(String, String)> {
-    let re = regex::Regex::new(r"--remoting-auth-token=([\w-]*) --app-port=([0-9]*)").or(Err(Error::AppNotRunning))?;
+    let re = regex::Regex::new(r"--remoting-auth-token=([\w-]*) --app-port=([0-9]*)")
+        .or(Err(Error::AppNotRunning))?;
     let caps = re.captures(value);
     let caps = caps.ok_or(Error::AppNotRunning)?;
-    let token: String = caps.get(1).ok_or(Error::AppNotRunning)?.as_str().to_string();
-    let port: String = caps.get(2).ok_or(Error::AppNotRunning)?.as_str().to_string();
+
+    let token: String = caps
+        .get(1)
+        .ok_or(Error::AppNotRunning)?
+        .as_str()
+        .to_string();
+    let port: String = caps
+        .get(2)
+        .ok_or(Error::AppNotRunning)?
+        .as_str()
+        .to_string();
 
     Ok((token, port))
 }

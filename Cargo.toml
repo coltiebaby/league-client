@@ -1,12 +1,13 @@
 [package]
 name = "league-client"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Colt Robertson <colt.robertson86@gmail.com>"]
-description = "Connect too your league of legends client"
 repository = "https://github.com/coltiebaby/league-client"
-license = "MIT"
 readme = "README.md"
+description = "Connect to your league of legends client"
+license = "MIT"
+keywords = ["lol", "lcu", "client-api"]
 
 [dependencies]
 base64 = "0.22.0"
