@@ -55,7 +55,8 @@ impl ClientBuilder {
         let http_client = self.reqwest_client()?;
         let connector = crate::connector::Connector::builder()
             .insecure(self.insecure)
-            .build();
+            .build()?;
+
         let addr = format!("127.0.0.1:{}", self.port);
 
         Ok(Client {
