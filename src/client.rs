@@ -153,14 +153,18 @@ fn from_process(process: &str) -> Option<Vec<String>> {
 
 #[cfg(target_family = "windows")]
 fn from_process(process: &str) -> Option<Vec<String>> {
-    let wanted = format!("name='{}.exe'", process);
-
-    let wmic = process::Command::new("wmic")
-        .args(["PROCESS", "WHERE", &wanted, "GET", "commandline"])
-        .output()
+    let wmic = process::Command::new("WMIC")
+        .args(["path", "win32_process", "get", "Caption,Commandline"])
+        .stdout(process::Stdio::piped())
+        .spawn()
         .ok()?;
 
-    let output = String::from_utf8(wmic.stdout).ok()?;
+    let process_exe = format!("{}.exe", process);
+
+    let mut findstr = process::Command::new("findstr");
+    findstr.args(["/R", &process_exe]).stdin(wmic.stdout?);
+
+    let output = String::from_utf8(findstr.output().ok()?.stdout).ok()?;
     let lines = output.lines();
 
     let lines: Vec<String> = lines
@@ -172,7 +176,7 @@ fn from_process(process: &str) -> Option<Vec<String>> {
 }
 
 fn parse_process(value: &str) -> Result<(String, String)> {
-    let re = regex::Regex::new(r"--remoting-auth-token=([\w-]*) --app-port=([0-9]*)")
+    let re = regex::Regex::new(r"--remoting-auth-token=([\S]*).*--app-port=([0-9]*)")
         .or(Err(Error::AppNotRunning))?;
     let caps = re.captures(value);
     let caps = caps.ok_or(Error::AppNotRunning)?;
