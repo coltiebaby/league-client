@@ -183,12 +183,12 @@ fn parse_process(value: &str) -> Result<(String, String)> {
 
     for arg in args {
         if arg.starts_with("--remoting-auth-token") {
-            let val = arg.split("=").collect::<Vec<&str>>()[1];
-            token = Ok(val);
+            let val = arg.split("=").last();
+            token = val.ok_or(Error::AppNotRunning);
         }
         if arg.starts_with("--app-port") {
-            let val = arg.split("=").collect::<Vec<&str>>()[1];
-            port = Ok(val);
+            let val = arg.split("=").last();
+            port = val.ok_or(Error::AppNotRunning);
         }
     }
 
