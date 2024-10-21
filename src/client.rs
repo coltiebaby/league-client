@@ -176,23 +176,23 @@ fn from_process(process: &str) -> Option<Vec<String>> {
 }
 
 fn parse_process(value: &str) -> Result<(String, String)> {
-    let re = regex::Regex::new(r#"--remoting-auth-token="?([\w]*)"?.*--app-port="?([0-9]*)"?"#)
-        .or(Err(Error::AppNotRunning))?;
-    let caps = re.captures(value);
-    let caps = caps.ok_or(Error::AppNotRunning)?;
+    let args: Vec<&str> = value.split("\"").collect();
 
-    let token: String = caps
-        .get(1)
-        .ok_or(Error::AppNotRunning)?
-        .as_str()
-        .to_string();
-    let port: String = caps
-        .get(2)
-        .ok_or(Error::AppNotRunning)?
-        .as_str()
-        .to_string();
+    let mut token = Err(Error::AppNotRunning);
+    let mut port = Err(Error::AppNotRunning);
 
-    Ok((token, port))
+    for arg in args {
+        if arg.starts_with("--remoting-auth-token") {
+            let val = arg.split("=").last();
+            token = val.ok_or(Error::AppNotRunning);
+        }
+        if arg.starts_with("--app-port") {
+            let val = arg.split("=").last();
+            port = val.ok_or(Error::AppNotRunning);
+        }
+    }
+
+    Ok((token?.to_string(), port?.to_string()))
 }
 
 #[cfg(test)]
