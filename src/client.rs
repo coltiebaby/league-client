@@ -153,21 +153,21 @@ fn from_process(process: &str) -> Option<Vec<String>> {
 
 #[cfg(target_family = "windows")]
 fn from_process(process: &str) -> Option<Vec<String>> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
     let wmic = process::Command::new("WMIC")
         .args(["path", "win32_process", "get", "Caption,Commandline"])
-        .stdout(process::Stdio::piped())
-        .spawn()
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
         .ok()?;
+
+    let stdout = String::from_utf8(wmic.stdout).ok()?;
 
     let process_exe = format!("{}.exe", process);
 
-    let mut findstr = process::Command::new("findstr");
-    findstr.args(["/R", &process_exe]).stdin(wmic.stdout?);
-
-    let output = String::from_utf8(findstr.output().ok()?.stdout).ok()?;
-    let lines = output.lines();
-
-    let lines: Vec<String> = lines
+    let lines = stdout.lines()
+        .filter(|x| x.contains(&process_exe))
         .filter(|x| x.contains("--app-port") && x.contains("--remoting-auth-token"))
         .map(String::from)
         .collect();
